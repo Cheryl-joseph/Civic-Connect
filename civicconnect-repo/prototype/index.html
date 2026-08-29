@@ -292,6 +292,9 @@ label{font-size:12.5px; font-weight:700; color:var(--text-2); margin:0 0 6px 2px
 </div>
 
 <script>
+/* ============================= BACKEND CONNECTION ============================= */
+const API_BASE = "https://citycare-backend-ft8o.onrender.com/api";
+
 /* ============================= DATA LAYER (mock) ============================= */
 const CATEGORIES = [
   {id:'crime', label:'Crime', icon:'🛡️', color:'#e0435a', desc:'Report illegal activity or a safety threat', geoLock:false},
@@ -701,7 +704,7 @@ function screenRaise(){
       <div class="field">
         <label>Add Photos</label>
         <div class="row gap8">
-          ${state.raise.images.map((src,i)=>`<img class="thumb" src="${src}">`).join('')}
+          ${state.raise.images.map((img,i)=>`<img class="thumb" src="${img.url}">`).join('')}
           ${state.raise.images.length<3?`<label class="thumb-add">+<input type="file" accept="image/*" class="hidden" onchange="handlePhoto(event)"></label>`:''}
         </div>
         <p style="font-size:10.5px;color:var(--text-3);margin:8px 0 0;">EXIF metadata is stripped from photos before upload to protect your location privacy.</p>
@@ -767,14 +770,44 @@ function detectLocation(){
 function handlePhoto(e){
   const file = e.target.files[0]; if(!file) return;
   const url = URL.createObjectURL(file);
-  state.raise.images.push(url); render();
+  state.raise.images.push({url, file}); render();
 }
-function submitComplaint(){
+async function submitComplaint(){
   const desc = document.getElementById('desc-input');
-  const id = 'CMP'+Math.floor(10000+Math.random()*89999);
   const cat = CAT(state.raise.category);
+  const descriptionText = (desc&&desc.value)||'No description provided.';
+
+  // Build a human-readable location string from the ward the local demo already resolved via GPS.
+  let locationText = 'Anonymous / unspecified location';
+  if(cat.geoLock && state.raise.ward){
+    const w = W(state.raise.ward);
+    if(w) locationText = `${w.village}, ${w.name}, ${w.district}, ${w.state}`;
+  }
+
+  // Try the real backend first. This never blocks the existing local-demo flow below —
+  // if the network call fails for any reason, the app still behaves exactly as it did before.
+  let realId = null;
+  try {
+    const formData = new FormData();
+    formData.append('category', cat.label);
+    formData.append('location', locationText);
+    formData.append('description', descriptionText);
+    formData.append('target_language', 'en');
+    state.raise.images.forEach(img => { if(img.file) formData.append('photos', img.file); });
+
+    const res = await fetch(`${API_BASE}/complaints`, { method: 'POST', body: formData });
+    if(res.ok){
+      const data = await res.json();
+      realId = data.id ? data.id.replace('#','') : null;
+    }
+  } catch(err) {
+    // Backend unreachable — fall through to the local-only simulated ID below.
+    console.warn('Backend submit failed, continuing with local simulation only:', err);
+  }
+
+  const id = realId || ('CMP'+Math.floor(10000+Math.random()*89999));
   const c = mkComplaint({
-    id, category:cat.id, title:cat.label+' Report', desc: (desc&&desc.value)||'No description provided.',
+    id, category:cat.id, title:cat.label+' Report', desc: descriptionText,
     wardId: cat.geoLock ? CITIZEN_HOME_WARD : CITIZEN_HOME_WARD, status:'pending', severity:state.raise.severity,
     upvotes:0, daysPending:0, communityVerified:false, govVerified:false, assigned:'Ward Councillor', createdDaysAgo:0, isCrime:cat.id==='crime',
   });
@@ -824,7 +857,7 @@ function screenDetails(){
         </div>
       </div>
       <p style="font-size:13.5px;line-height:1.6;margin:14px 0;">${c.description}</p>
-      ${c.images.length?`<div class="row gap8" style="margin-bottom:10px;">${c.images.map(s=>`<img class="thumb" src="${s}">`).join('')}</div>`:''}
+      ${c.images.length?`<div class="row gap8" style="margin-bottom:10px;">${c.images.map(img=>`<img class="thumb" src="${img.url}">`).join('')}</div>`:''}
       <div class="row between" style="font-size:12px;color:var(--text-2);margin-top:6px;">
         <span>📍 ${w.village}, ${w.name}</span><span>${w.district}, ${w.state}</span>
       </div>
@@ -1112,7 +1145,7 @@ function screenGovDetail(){
       <div class="muted" style="font-size:11.5px;">Category</div><div style="font-weight:700;margin-bottom:10px;">${cat.icon} ${cat.label}</div>
       <div class="muted" style="font-size:11.5px;">Location</div><div style="font-weight:700;margin-bottom:10px;">${w.village}, ${w.name}, ${w.district}</div>
       <div class="muted" style="font-size:11.5px;">Description</div><div style="font-size:13.5px;margin-bottom:10px;line-height:1.6;">${c.description}</div>
-      ${c.images.length?`<div class="row gap8" style="margin-bottom:10px;">${c.images.map(s=>`<img class="thumb" src="${s}">`).join('')}</div>`:''}
+      ${c.images.length?`<div class="row gap8" style="margin-bottom:10px;">${c.images.map(img=>`<img class="thumb" src="${img.url}">`).join('')}</div>`:''}
       <div class="muted" style="font-size:11.5px;">Reporter</div>
       <div class="row gap8" style="margin-bottom:4px;"><span class="chip" style="cursor:default;">🕶️ Anonymous Citizen</span></div>
     </div>
