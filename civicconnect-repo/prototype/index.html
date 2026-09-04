@@ -26,7 +26,7 @@
   --border:rgba(255,255,255,.13); --shadow:0 12px 38px rgba(0,0,0,.6);
   --rim-top:rgba(255,255,255,.14); --rim-bottom:rgba(0,0,0,.4);
   --sheen:linear-gradient(155deg, rgba(255,255,255,.14) 0%, rgba(255,255,255,.03) 30%, rgba(255,255,255,0) 55%, rgba(139,131,255,.10) 100%);
-  --text:#eef0fb; --text-2:#a7adce; --text-3:#767ca0;
+  --text:#ffffff; --text-2:#c7cbe6; --text-3:#9298bd;
   --accent:#8b83ff; --accent-2:#5b9dff; --accent-grad:linear-gradient(135deg,#8b83ff,#5b9dff);
   --success:#2fd47e; --success-2:#1fb56a; --warn:#f5a742; --danger:#ff6b7f; --info:#5b9dff;
   --nav:rgba(10,13,26,.58); --chip:rgba(255,255,255,.05);
@@ -111,8 +111,15 @@ input:disabled, select:disabled, textarea:disabled{
   color:var(--text-2); -webkit-text-fill-color:var(--text-2); opacity:1;
 }
 [data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea{color-scheme:dark;}
+[data-theme="dark"] h1, [data-theme="dark"] h2, [data-theme="dark"] h3, [data-theme="dark"] .display, [data-theme="dark"] .cc-title{color:#ffffff;}
+[data-theme="dark"] .glass-card b, [data-theme="dark"] .complaint-card b,
+[data-theme="dark"] .glass-card p, [data-theme="dark"] .glass-card > div > div,
+[data-theme="dark"] [style*="font-weight:800"], [data-theme="dark"] [style*="font-weight:700"], [data-theme="dark"] [style*="font-weight:600"],
+[data-theme="dark"] .tl-title, [data-theme="dark"] .cc-meta{color:#ffffff;}
+[data-theme="dark"] .muted{color:#d6d9f0;}
 select{color:var(--text);}
-select option{background:var(--glass-hi); color:var(--text);}
+select option{background:#ffffff; color:#1c2036;}
+[data-theme="dark"] select option{background:#161c30; color:#eef0fb;}
 label{font-size:12.5px; font-weight:700; color:var(--text-2); margin:0 0 6px 2px; display:block; letter-spacing:.2px;}
 .field{margin-bottom:14px;}
 .link{color:var(--accent); font-weight:700; cursor:pointer;}
@@ -415,7 +422,7 @@ const state = {
   activeGovRole:'WARD_COUNCILLOR',
   homeTab:'mine',
   govSort:'priority',
-  raise:{ category:null, description:'', severity:3, gpsState:'idle', gpsScenario:'valid', ward:null, images:[] },
+  raise:{ category:null, description:'', severity:3, gpsState:'idle', gpsScenario:'valid', ward:null, images:[], submitting:false, submitStartedAt:null },
 };
 
 function nav(screen, opts){
@@ -670,7 +677,7 @@ function screenCategory(){
   </div>`;
 }
 function startRaise(catId){
-  state.raise = {category:catId, description:'', severity:3, gpsState:'idle', gpsScenario:'valid', ward:null, images:[]};
+  state.raise = {category:catId, description:'', severity:3, gpsState:'idle', gpsScenario:'valid', ward:null, images:[], submitting:false, submitStartedAt:null};
   nav('raise-complaint');
 }
 
@@ -712,7 +719,10 @@ function screenRaise(){
 
       ${cat.id==='crime' ? `<div class="glass-card tight" style="background:rgba(63,123,240,.08);border-color:rgba(63,123,240,.3);margin-bottom:14px;"><p style="font-size:11.5px;color:var(--info);margin:0;line-height:1.5;">🔒 Your identity will remain anonymous to government officials. Only the incident location is recorded.</p></div>` : ''}
 
-      <button class="btn btn-primary full" onclick="submitComplaint()" ${geoLock && state.raise.gpsState!=='valid' ? 'style="opacity:.5;pointer-events:none;"' : ''}>Submit Complaint</button>
+      ${state.raise.submitting
+        ? `<button class="btn btn-primary full" disabled style="opacity:.55;pointer-events:none;">⏳ Submitting…</button>
+           <div class="muted center" style="font-size:12px;margin-top:10px;">Please wait, this can take a moment — <span id="submit-timer-val">0s</span> elapsed</div>`
+        : `<button class="btn btn-primary full" onclick="submitComplaint()" ${geoLock && state.raise.gpsState!=='valid' ? 'style="opacity:.5;pointer-events:none;"' : ''}>Submit Complaint</button>`}
     </div>
   </div>`;
 }
@@ -777,6 +787,17 @@ async function submitComplaint(){
   const cat = CAT(state.raise.category);
   const descriptionText = (desc&&desc.value)||'No description provided.';
 
+  // Preserve typed description across the loading re-render, then show the disabled
+  // button + elapsed timer immediately so submission never looks like a silent hang.
+  state.raise.description = descriptionText;
+  state.raise.submitting = true;
+  state.raise.submitStartedAt = Date.now();
+  render();
+  const timerInterval = setInterval(()=>{
+    const el = document.getElementById('submit-timer-val');
+    if(el) el.textContent = Math.floor((Date.now()-state.raise.submitStartedAt)/1000)+'s';
+  }, 1000);
+
   // Build a human-readable location string from the ward the local demo already resolved via GPS.
   let locationText = 'Anonymous / unspecified location';
   if(cat.geoLock && state.raise.ward){
@@ -804,6 +825,9 @@ async function submitComplaint(){
     // Backend unreachable — fall through to the local-only simulated ID below.
     console.warn('Backend submit failed, continuing with local simulation only:', err);
   }
+
+  clearInterval(timerInterval);
+  state.raise.submitting = false;
 
   const id = realId || ('CMP'+Math.floor(10000+Math.random()*89999));
   const c = mkComplaint({
